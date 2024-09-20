@@ -282,6 +282,9 @@ def reject_row_callback():
     
     # Mark the row as rejected
     update_dialect_words(id_ai, "reject")
+
+    # # Clear token mappings after processing
+    st.session_state.token_mappings = []
     
     # Move to the next row after rejecting
     st.session_state.current_row_index = (st.session_state.current_row_index + 1) % len(rows)
