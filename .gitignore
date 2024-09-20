@@ -1,5 +1,9 @@
 .streamlit/secrets.toml
 
+feed_with_tweets.py
+your_database.sqlite
+saudi_dialect_tweets.csv
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
