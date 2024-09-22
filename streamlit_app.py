@@ -62,6 +62,10 @@ elif st.session_state.annotator_id == third or st.session_state.annotator_id == 
     TOTAL_TARGET = DAILY_TARGET * WORK_DAYS
     start_date_str = "2024-09-23" 
 else:
+    DAILY_TARGET = 50  # Assign 100 for first and second annotators
+    WORK_DAYS = 34 
+    TOTAL_TARGET = DAILY_TARGET * WORK_DAYS
+    start_date_str = "2024-09-23" 
     st.error("معرف المراجع غير صحيح. يرجى إدخال معرف صالح.")
     st.stop()  # Stop execution until a valid ID is provided
 
