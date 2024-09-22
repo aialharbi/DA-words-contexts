@@ -52,15 +52,15 @@ if annotator_id_input:
 
 # Set different DAILY_TARGET based on annotator_id
 if st.session_state.annotator_id == first or st.session_state.annotator_id == second:
-    DAILY_TARGET = 150  # Assign 100 for first and second annotators
+    DAILY_TARGET = 100  # Assign 100 for first and second annotators
     WORK_DAYS = 34 
     TOTAL_TARGET = DAILY_TARGET * WORK_DAYS
     start_date_str = "2024-09-20" 
 elif st.session_state.annotator_id == third or st.session_state.annotator_id == forth or st.session_state.annotator_id == fifth:
-    DAILY_TARGET = 5  # Assign 100 for first and second annotators
+    DAILY_TARGET = 50  # Assign 100 for first and second annotators
     WORK_DAYS = 34 
     TOTAL_TARGET = DAILY_TARGET * WORK_DAYS
-    start_date_str = "2024-09-19" 
+    start_date_str = "2024-09-23" 
 else:
     st.error("معرف المراجع غير صحيح. يرجى إدخال معرف صالح.")
     st.stop()  # Stop execution until a valid ID is provided
