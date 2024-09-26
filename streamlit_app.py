@@ -112,40 +112,69 @@ def get_db_connection():
     conn.execute('PRAGMA foreign_keys = ON;')
     return conn
 
-def get_rows_by_processed():
+# Function to fetch rows based on the processed state
+def get_rows_by_processed(processed_status):
     conn = get_db_connection()
     c = conn.cursor()
-    # Fetch rows that are not processed ("no") and are not "taken"
-    c.execute('SELECT * FROM dialect_words WHERE processed = "no" OR processed IS NULL')
+    c.execute('SELECT * FROM dialect_words WHERE processed = ?', (processed_status,))
     rows = c.fetchall()
     conn.close()  # Close the connection after fetching rows
     return rows
 
-
-# Function to mark a row as "taken" when a user starts processing
-def mark_row_as_taken(id_ai):
+# Function to fetch rows based on the processed state and taken status
+def get_available_row():
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute('UPDATE dialect_words SET processed = "taken" WHERE id_ai = ?', (id_ai,))
-    conn.commit()
+    annotator_id = st.session_state.annotator_id
+    
+    # First, try to get a row that is already taken by this annotator
+    c.execute('''
+        SELECT * FROM dialect_words 
+        WHERE processed = "no" 
+        AND taken = "yes" 
+        AND taken_by = ?
+        LIMIT 1
+    ''', (annotator_id,))
+    row = c.fetchone()
+    
+    # If no such row exists, get a new available row that is either not taken or has a null annotator
+    if not row:
+        c.execute('''
+            SELECT * FROM dialect_words 
+            WHERE processed = "no" 
+            AND (taken = "no" OR (taken = "yes" AND taken_by IS NULL))
+            LIMIT 1
+        ''')
+        row = c.fetchone()
+        
+        # If a new row is fetched, mark it as taken by the current annotator
+        if row:
+            id_ai = row[0]
+            c.execute('''
+                UPDATE dialect_words 
+                SET taken = "yes", taken_by = ? 
+                WHERE id_ai = ?
+            ''', (annotator_id, id_ai))
+            conn.commit()
+    
     conn.close()
+    return row
 
 
-# Function to clear "taken" status once a row is processed or rejected
-def clear_taken_status(id_ai):
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute('UPDATE dialect_words SET status = NULL WHERE id_ai = ?', (id_ai,))
-    conn.commit()
-    conn.close()
 
-# Function to update the dialect_words table based on action
+
 def update_dialect_words(id_ai, action):
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute('UPDATE dialect_words SET processed = ? WHERE id_ai = ?', (action, id_ai))
+    # Update processed state and clear taken status
+    c.execute('''
+        UPDATE dialect_words 
+        SET processed = ?, taken = "no", taken_by = NULL 
+        WHERE id_ai = ?
+    ''', (action, id_ai))
     conn.commit()
-    conn.close()  # Close the connection after updating
+    conn.close()
+
 
 # Function to save the annotation with the annotator ID and localized datestamp
 def save_annotation(id_ai, word, context):
@@ -270,34 +299,37 @@ def display_token_mapping(source_text, entity_id,saudi_dialect_word):
 # Function to handle processing a row and then move to the next one
 def process_row_callback():
     if not st.session_state.token_mappings:
-        st.session_state.show_warning = True
-        return
+        st.session_state.show_warning = True  # Set a flag to show the warning
+        return  # Do not proceed if no token mappings have been made
     else:
-        st.session_state.show_warning = False
+        st.session_state.show_warning = False  # Reset the warning flag if mappings exist
 
-    row = rows[st.session_state.current_row_index]
-    id_ai, tweet, saudi_dialect_word, processed = row
+    row = st.session_state.current_row
+    id_ai, tweet, saudi_dialect_word, processed, taken, taken_by = row
 
+    # Save annotation logic remains the same
     for token_mapping in st.session_state.token_mappings:
         selected_token, context = token_mapping.split(" -> ")
         save_annotation(id_ai, selected_token, context)
 
-    # Mark the row as processed ("yes")
+    # Mark the row as processed and free up the reservation
     update_dialect_words(id_ai, "yes")
-    
+
+    # Clear token mappings and fetch a new available row
     st.session_state.token_mappings = []
-    st.session_state.current_row_index = (st.session_state.current_row_index + 1) % len(rows)
+    st.session_state.current_row = get_available_row()
 
 # Function to handle rejecting a row
 def reject_row_callback():
-    row = rows[st.session_state.current_row_index]
-    id_ai, tweet, saudi_dialect_word, processed = row
-    
-    # Mark the row as rejected
+    row = st.session_state.current_row
+    id_ai, tweet, saudi_dialect_word, processed, taken, taken_by = row
+
+    # Mark the row as rejected and free up the reservation
     update_dialect_words(id_ai, "reject")
 
+    # Clear token mappings and fetch a new available row
     st.session_state.token_mappings = []
-    st.session_state.current_row_index = (st.session_state.current_row_index + 1) % len(rows)
+    st.session_state.current_row = get_available_row()
 
 
 # Function to fetch daily annotations for the specific annotator
@@ -321,24 +353,15 @@ def get_total_annotations():
     conn.close()
     return count
 
-# Fetch unprocessed rows (processed = "no") if not already fetched
-if 'rows' not in st.session_state:
-    st.session_state.rows = get_rows_by_processed()
+# Fetch an available row if not already fetched
+if 'current_row' not in st.session_state:
+    st.session_state.current_row = get_available_row()
 
-rows = st.session_state.rows  # Use stored rows
+row = st.session_state.current_row
 
-# Check if we have any rows left to process
-if rows and len(rows) > 0:
-    # Ensure the current_row_index is within bounds
-    if st.session_state.current_row_index >= len(rows):
-        st.session_state.current_row_index = 0  # Reset index if it exceeds the number of rows
-
-    # Handle row navigation
-    row = rows[st.session_state.current_row_index]
-    id_ai, tweet, saudi_dialect_word, processed = row
-
-    # Mark this row as "taken"
-    mark_row_as_taken(id_ai)
+# Check if we have a row to process
+if row:
+    id_ai, tweet, saudi_dialect_word, processed, taken, taken_by = row
 
     # RTL Styling for Arabic and button enhancement
     st.markdown("""
