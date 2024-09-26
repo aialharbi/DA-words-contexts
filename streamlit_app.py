@@ -112,14 +112,32 @@ def get_db_connection():
     conn.execute('PRAGMA foreign_keys = ON;')
     return conn
 
-# Function to fetch rows based on the processed state
-def get_rows_by_processed(processed_status):
+def get_rows_by_processed():
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute('SELECT * FROM dialect_words WHERE processed = ?', (processed_status,))
+    # Fetch rows that are not processed ("no") and are not "taken"
+    c.execute('SELECT * FROM dialect_words WHERE processed = "no" OR processed IS NULL')
     rows = c.fetchall()
     conn.close()  # Close the connection after fetching rows
     return rows
+
+
+# Function to mark a row as "taken" when a user starts processing
+def mark_row_as_taken(id_ai):
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute('UPDATE dialect_words SET processed = "taken" WHERE id_ai = ?', (id_ai,))
+    conn.commit()
+    conn.close()
+
+
+# Function to clear "taken" status once a row is processed or rejected
+def clear_taken_status(id_ai):
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute('UPDATE dialect_words SET status = NULL WHERE id_ai = ?', (id_ai,))
+    conn.commit()
+    conn.close()
 
 # Function to update the dialect_words table based on action
 def update_dialect_words(id_ai, action):
@@ -251,32 +269,23 @@ def display_token_mapping(source_text, entity_id,saudi_dialect_word):
 
 # Function to handle processing a row and then move to the next one
 def process_row_callback():
-    # Check if token mappings exist
     if not st.session_state.token_mappings:
-        st.session_state.show_warning = True  # Set a flag to show the warning
-        return  # Do not proceed if no token mappings have been made
+        st.session_state.show_warning = True
+        return
     else:
-        st.session_state.show_warning = False  # Reset the warning flag if mappings exist
+        st.session_state.show_warning = False
 
-    # Get the current row to be processed
     row = rows[st.session_state.current_row_index]
     id_ai, tweet, saudi_dialect_word, processed = row
 
-    # We only want to save the selected token (from the token mappings)
-    # Assuming the token mappings are in the format "selected_token -> context"
     for token_mapping in st.session_state.token_mappings:
         selected_token, context = token_mapping.split(" -> ")
-
-        # Save only the selected token and the corresponding context
         save_annotation(id_ai, selected_token, context)
 
-    # Mark the row as processed
+    # Mark the row as processed ("yes")
     update_dialect_words(id_ai, "yes")
-
-    # Clear token mappings after processing
+    
     st.session_state.token_mappings = []
-
-    # Move to the next row after processing
     st.session_state.current_row_index = (st.session_state.current_row_index + 1) % len(rows)
 
 # Function to handle rejecting a row
@@ -287,11 +296,9 @@ def reject_row_callback():
     # Mark the row as rejected
     update_dialect_words(id_ai, "reject")
 
-    # # Clear token mappings after processing
     st.session_state.token_mappings = []
-    
-    # Move to the next row after rejecting
     st.session_state.current_row_index = (st.session_state.current_row_index + 1) % len(rows)
+
 
 # Function to fetch daily annotations for the specific annotator
 def get_daily_annotations():
@@ -316,7 +323,7 @@ def get_total_annotations():
 
 # Fetch unprocessed rows (processed = "no") if not already fetched
 if 'rows' not in st.session_state:
-    st.session_state.rows = get_rows_by_processed("no")
+    st.session_state.rows = get_rows_by_processed()
 
 rows = st.session_state.rows  # Use stored rows
 
@@ -329,6 +336,9 @@ if rows and len(rows) > 0:
     # Handle row navigation
     row = rows[st.session_state.current_row_index]
     id_ai, tweet, saudi_dialect_word, processed = row
+
+    # Mark this row as "taken"
+    mark_row_as_taken(id_ai)
 
     # RTL Styling for Arabic and button enhancement
     st.markdown("""
